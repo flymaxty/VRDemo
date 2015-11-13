@@ -17,8 +17,14 @@ int main(int argc, const char * argv[])
 
 	cv::Ptr<cv::text::ERFilter::Callback> NM1Callback = cv::text::loadClassifierNM1("..\\..\\model\\trained_classifierNM1.xml");
 	cv::Ptr<cv::text::ERFilter::Callback> NM2Callback = cv::text::loadClassifierNM2("..\\..\\model\\trained_classifierNM2.xml");
-	cv::Ptr<cv::text::ERFilter> er_filter1 = cv::text::createERFilterNM1(NM1Callback, 16, 0.00015f, 0.13f, 0.2f, true, 0.1f);
-	cv::Ptr<cv::text::ERFilter> er_filter2 = cv::text::createERFilterNM2(NM2Callback, 0.5);
+	std::vector<cv::Ptr<cv::text::ERFilter>> er_filter1;
+	std::vector<cv::Ptr<cv::text::ERFilter>> er_filter2;
+
+	for (int i = 0; i < 5; i++)
+	{
+		er_filter1.push_back(cv::text::createERFilterNM1(NM1Callback, 16, 0.00015f, 0.13f, 0.2f, true, 0.1f));
+		er_filter2.push_back(cv::text::createERFilterNM2(NM2Callback, 0.5));
+	}
 
 	tesseract::TessBaseAPI tess;
 	tess.Init(NULL, "eng", tesseract::OEM_DEFAULT);
@@ -27,12 +33,13 @@ int main(int argc, const char * argv[])
 
 	std::vector<cv::Mat> channels;
 	cv::text::computeNMChannels(sceneImage, channels);
+	std::cout << channels.size() << std::endl;
 
 	std::vector<std::vector<cv::text::ERStat>> regions(channels.size());
 	for (uint8_t i = 0; i < regions.size(); i++)
 	{
-		er_filter1->run(channels[i], regions[i]);
-		er_filter2->run(channels[i], regions[i]);
+		er_filter1[i]->run(channels[i], regions[i]);
+		er_filter2[i]->run(channels[i], regions[i]);
 	}
 
 	std::vector<std::vector<cv::Vec2i>> regionGroups;

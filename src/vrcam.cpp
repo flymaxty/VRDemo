@@ -11,6 +11,34 @@
 #include "baseapi.h"
 #include "strngs.h"
 
+/*
+//ERStat extraction is done in parallel for different channels
+class Parallel_extractCSER : public cv::ParallelLoopBody
+{
+private:
+	vector<Mat> &channels;
+	vector< vector<ERStat> > &regions;
+	vector< Ptr<ERFilter> > er_filter1;
+	vector< Ptr<ERFilter> > er_filter2;
+
+public:
+	Parallel_extractCSER(vector<Mat> &_channels, vector< vector<ERStat> > &_regions,
+		vector<Ptr<ERFilter> >_er_filter1, vector<Ptr<ERFilter> >_er_filter2)
+		: channels(_channels), regions(_regions), er_filter1(_er_filter1), er_filter2(_er_filter2){}
+
+	virtual void operator()(const cv::Range &r) const
+	{
+		for (int c = r.start; c < r.end; c++)
+		{
+			er_filter1[c]->run(channels[c], regions[c]);
+			er_filter2[c]->run(channels[c], regions[c]);
+		}
+	}
+	Parallel_extractCSER & operator=(const Parallel_extractCSER &a);
+};
+*/
+
+
 int main(int argc, const char * argv[])
 {
 	cv::Ptr<cv::text::ERFilter::Callback> NM1Callback = cv::text::loadClassifierNM1("..\\..\\model\\trained_classifierNM1.xml");
@@ -37,7 +65,7 @@ int main(int argc, const char * argv[])
 	};
 
 	std::vector<TextBox> textBoxes;
-	TextBox tempBox;
+	//TextBox tempBox;
 
 	cv::Mat wordImage;
 	std::string wordString;
@@ -64,10 +92,24 @@ int main(int argc, const char * argv[])
 		textBoxes.clear();
 		for (uint16_t x = 0; x < groupBoxes.size(); x++)
 		{
-			wordImage = sceneImage(groupBoxes[x]);
+			TextBox tempBox;
+			tempBox.rect = groupBoxes[x];
+			
+			if (tempBox.rect.x < 0)
+				break;// tempBox.rect.x = 0;
+			if (tempBox.rect.y < 0)
+				break;//tempBox.rect.y = 0;
+			if (tempBox.rect.br().x > sceneImage.cols)
+				break;//tempBox.rect.width = sceneImage.cols - tempBox.rect.x;
+			if (tempBox.rect.br().y> sceneImage.rows)
+				break;//tempBox.rect.height = sceneImage.rows - tempBox.rect.y;
+
+			//std::cout << groupBoxes[x].rect << std::endl;
+			wordImage = sceneImage(tempBox.rect);
 			tess.SetImage((unsigned char*)wordImage.data, wordImage.cols, wordImage.rows, wordImage.channels(), wordImage.step);
 			wordString = tess.GetUTF8Text();
 			wordString.erase(remove(wordString.begin(), wordString.end(), '\n'), wordString.end());
+			tempBox.word = wordString;
 
 			//std::cout << x << " : ";
 			//std::cout << groupBoxes[x].tl() << ", " << groupBoxes[x].br();
@@ -76,7 +118,7 @@ int main(int argc, const char * argv[])
 			isRepeative = false;
 			for (uint16_t i = 0; i < textBoxes.size(); i++)
 			{
-				if (textBoxes[i].word == wordString && textBoxes[i].rect == groupBoxes[i])
+				if (textBoxes[i].word == wordString && textBoxes[i].rect == tempBox.rect)
 				{
 					isRepeative = true;
 					break;
@@ -84,21 +126,20 @@ int main(int argc, const char * argv[])
 			}
 			if (!isRepeative)
 			{
-				tempBox.word = wordString;
-				tempBox.rect = groupBoxes[x];
 				textBoxes.push_back(tempBox);
 			}
 		}
 
 		sceneImage.copyTo(outputImage);
-		//std::cout << "===================   Words   ===================" << std::endl;
+		std::cout << "===================   Words   ===================" << std::endl;
 		for (uint16_t xx = 0; xx < textBoxes.size(); xx++)
 		{
-			//std::cout << xx << " : ";
-			//std::cout << textBoxes[xx].rect.tl() << ", " << textBoxes[xx].rect.br();
-			//std::cout << ", " << textBoxes[xx].word << std::endl;
+			std::cout << xx << " : ";
+			std::cout << textBoxes[xx].rect.tl() << ", " << textBoxes[xx].rect.br();
+			std::cout << ", " << textBoxes[xx].word << std::endl;
 
-			cv::putText(outputImage, textBoxes[xx].word, textBoxes[xx].rect.tl(), cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 255, 0));
+			cv::putText(outputImage, textBoxes[xx].word, textBoxes[xx].rect.tl(),
+						cv::FONT_HERSHEY_PLAIN, 2, cv::Scalar(0, 0, 255), 2, cv::LineTypes::LINE_AA);
 		}
 
 		imshow("Output Image", outputImage);
