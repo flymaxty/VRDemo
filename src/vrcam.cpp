@@ -38,22 +38,22 @@ public:
 };
 */
 
-struct ImageRect{
-	std::vector<cv::Point2f> vertexes;
+struct RectData{
 	std::string name;
-	cv::Mat transH;
+	std::vector<cv::Point2f> vertexes;
 };
 
 struct ImageData{
 	cv::Mat image;
+	std::string name;
 	std::vector<cv::Point2f> vertexes;
 };
 
 struct TextBox
 {
+	bool hasRect;
 	std::string word;
 	cv::Rect rect;
-	cv::Point2f center;
 };
 
 cv::VideoCapture cap;										//Camera
@@ -63,10 +63,11 @@ cv::Mat sceneImage, step1Image, outputImage;				//Input and output image
 double area;
 std::vector<cv::Point> poly;
 std::vector<std::vector<cv::Point>> contours;
-cv::Mat grayImage, thresholdImage, cannyImage, tmpImage, maskImage;
+cv::Mat grayImage, thresholdImage, cannyImage;
 
 cv::Mat transH;
-std::vector <ImageRect> showRect;							//Filterd contours
+RectData tmpImageRect;
+std::vector <RectData> showRect;							//Filterd contours
 std::vector<cv::Point2f> tmpVertexes;
 std::map<std::string, ImageData> imageData;					//Stored Image
 
@@ -124,6 +125,13 @@ void loadImage()
 	imageData["YUI"].vertexes[2] = cv::Point2f(imageData["YUI"].image.cols, imageData["YUI"].image.rows);
 	imageData["YUI"].vertexes[3] = cv::Point2f(imageData["YUI"].image.cols, 0);
 
+	imageData["UNKNOWN"].image = cv::imread("..\\..\\image\\UNKNOWN.jpg");
+	imageData["UNKNOWN"].vertexes.resize(4);
+	imageData["UNKNOWN"].vertexes[0] = cv::Point2f(0, 0);
+	imageData["UNKNOWN"].vertexes[1] = cv::Point2f(0, imageData["UNKNOWN"].image.rows);
+	imageData["UNKNOWN"].vertexes[2] = cv::Point2f(imageData["UNKNOWN"].image.cols, imageData["UNKNOWN"].image.rows);
+	imageData["UNKNOWN"].vertexes[3] = cv::Point2f(imageData["UNKNOWN"].image.cols, 0);
+
 	/*std::map<std::string, ImageData>::iterator it;
 	for (it = imageData.begin(); it != imageData.end(); it++)
 	{
@@ -135,7 +143,9 @@ void loadImage()
 
 void findOutputRect()
 {
+	tmpImageRect.vertexes.resize(4);
 	tmpVertexes.resize(4);
+	showRect.clear();
 
 	cv::cvtColor(sceneImage, grayImage, cv::COLOR_BGR2GRAY);
 	grayImage.convertTo(grayImage, CV_8UC1);
@@ -163,20 +173,71 @@ void findOutputRect()
 				for (uint8_t jj = 0; jj < 4; jj++)
 				{
 					//cv::circle(outputImage, poly[jj], 8, cv::Scalar(60 * jj, 0, 0), cv::FILLED, cv::LineTypes::LINE_AA);
-					tmpVertexes[jj].x = poly[jj].x;
-					tmpVertexes[jj].y = poly[jj].y;
+					tmpImageRect.vertexes[jj].x = poly[jj].x;
+					tmpImageRect.vertexes[jj].y = poly[jj].y;
 				}
+
+				tmpImageRect.name = "UNKNOWN";
+				showRect.push_back(tmpImageRect);
 				//cv::drawContours(outputImage, contours, i, cv::Scalar(0, 255, 255), cv::LineTypes::FILLED);
-				transH = cv::getPerspectiveTransform(imageData["GUNDAM"].vertexes, tmpVertexes);
-				cv::warpPerspective(imageData["GUNDAM"].image, tmpImage, transH, outputImage.size());
-				tmpImage.copyTo(maskImage);
-				cv::cvtColor(maskImage, maskImage, CV_BGR2GRAY);
-				tmpImage.copyTo(outputImage, maskImage);
+				//tmpImageRect.transH = cv::getPerspectiveTransform(imageData["GUNDAM"].vertexes, tmpImageRect.vertexes);
+				//cv::warpPerspective(imageData["GUNDAM"].image, tmpImage, transH, outputImage.size());
+				//tmpImage.copyTo(maskImage);
+				//cv::cvtColor(maskImage, maskImage, CV_BGR2GRAY);
+				//tmpImage.copyTo(outputImage, maskImage);
 			}
 		}
 		cv::drawContours(testImage, contours, i, cv::Scalar(0, 255, 255));
 	}
 	cv::imshow("testImage", testImage);
+}
+
+void matching()
+{
+	double shortestDistance = 99999, tmpDistance;
+	uint16_t shortestIndex = 0;
+	for (uint16_t i = 0; i < textBoxes.size(); i++)
+	{
+		if (imageData.count(textBoxes[i].word))
+		{
+			shortestDistance = 99999;
+			for (uint16_t j = 0; j < showRect.size(); j++)
+			{
+				for (uint8_t x = 0; x < 4; x++)
+				{
+					tmpDistance = cv::norm(cv::Point2f(textBoxes[i].rect.tl()) - showRect[j].vertexes[x]);
+					if (tmpDistance < shortestDistance)
+					{
+						shortestDistance = tmpDistance;
+						shortestIndex = j;
+					}
+				}
+			}
+
+			std::vector<RectData>::iterator it;
+			if (showRect[shortestIndex].name == "UNKNOWN")
+			{
+				std::cout << "set name: " << textBoxes[i].word << std::endl;
+				showRect[shortestIndex].name = textBoxes[i].word;
+			}
+		}
+	}
+}
+
+void showing()
+{
+	cv::Mat transH;
+	cv::Mat tmpImage, maskImage;
+
+	std::vector<RectData>::iterator it;
+	for (it = showRect.begin(); it != showRect.end(); it++)
+	{
+		transH = cv::getPerspectiveTransform(imageData[it->name].vertexes, it->vertexes);
+		cv::warpPerspective(imageData[it->name].image, tmpImage, transH, outputImage.size());
+		tmpImage.copyTo(maskImage);
+		cv::cvtColor(maskImage, maskImage, CV_BGR2GRAY);
+		tmpImage.copyTo(outputImage, maskImage);
+	}
 }
 
 void doOCR()
@@ -217,7 +278,7 @@ void doOCR()
 		tmpWordString = tess.GetUTF8Text();
 		tmpWordString.erase(remove(tmpWordString.begin(), tmpWordString.end(), '\n'), tmpWordString.end());
 		tempBox.word = tmpWordString;
-
+		tempBox.hasRect = false;
 		//std::cout << x << " : ";
 		//std::cout << groupBoxes[x].tl() << ", " << groupBoxes[x].br();
 		//std::cout << ", " << wordString << std::endl;
@@ -258,13 +319,16 @@ int main(int argc, const char * argv[])
 	while (1)
 	{
 		cap >> sceneImage;
+		cv::flip(sceneImage, sceneImage, 0);
+		cv::flip(sceneImage, sceneImage, 1);
 		sceneImage.copyTo(outputImage);
 
 		//Detect vaild Rectangle
 		findOutputRect();
-
 		//OCR
 		doOCR();
+		matching();
+		showing();
 
 		imshow("Output Image", outputImage);
 		cv::waitKey(1);
